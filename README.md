@@ -1,6 +1,6 @@
 # payload-dumper-go
 
-An android OTA payload dumper written in Go.
+An Android OTA payload dumper written in Go.
 
 ## Features
 
@@ -10,12 +10,12 @@ See how fast payload-dumper-go is: https://imgur.com/a/X6HKJT4. (MacBook Pro 16-
 
 - Incredibly fast decompression. All decompression progresses are executed in parallel.
 - Payload checksum verification.
-- Support original zip package that contains payload.bin.
+- Supports zip packages that contain `payload.bin`.
 
 ### Cautions
 
-- There's just one dependency you need to install on your system: `xz`. (The reason I didn't use the pure Go implementation is written in the [Performance](#performance) section below.)
-- Working on a SSD is highly recommended for performance reasons, a HDD could be a bottle-neck.
+- Install `xz` on your system. (Why CGO + system `xz` is used is described in [Performance](#performance).)
+- Working on SSD is highly recommended for performance. HDD can become a bottleneck.
 
 ### Limitations
 
@@ -58,13 +58,66 @@ $ brew install payload-dumper-go
 6. Click "New" and add the path to the directory where the extracted binary is located.
 7. Click "OK" on all the windows to save the changes.
 
+### Build from source
+
+Requirements:
+- Go `1.26+`
+- `xz` development library (`liblzma`)
+
+```sh
+git clone https://github.com/ssut/payload-dumper-go
+cd payload-dumper-go
+go build .
+```
+
 ## Usage
 
-Run the following command in your terminal:
+Extract all partitions:
 
-```
+```sh
 payload-dumper-go /path/to/payload.bin
 ```
+
+List partitions only:
+
+```sh
+payload-dumper-go -l /path/to/payload.bin
+```
+
+Extract selected partitions to a custom output directory:
+
+```sh
+payload-dumper-go -p boot,vendor -o out /path/to/payload.bin
+```
+
+Set extraction concurrency:
+
+```sh
+payload-dumper-go -c 8 /path/to/payload.bin
+```
+
+## Development
+
+This repository includes a `justfile` to standardize local development tasks.
+
+```sh
+# list tasks
+just
+
+# format, vet, test, and build (full local quality gate)
+just check
+
+# run individual steps
+just fmt
+just lint
+just test
+just build
+
+# run the CLI against a payload
+just run /path/to/payload.bin
+```
+
+Contributing and repository conventions are documented in [`AGENTS.md`](./AGENTS.md).
 
 ## Performance
 
@@ -106,7 +159,7 @@ vendor (693 MB)             [===================================================
 vendor_boot (67 MB)         [===================================================================================================================] 100 %
 vendor_dlkm (28 MB)         [===================================================================================================================] 100 %
 vendor_kernel_boot (67 MB)  [===================================================================================================================] 100 %
-go run *.go payload.bin  87.93s user 3.51s system 145% cpu 1:02.99 total
+go run . payload.bin  87.93s user 3.51s system 145% cpu 1:02.99 total
 ```
 
 ### Why not use the pure Go implementation for xz decompression?
@@ -147,7 +200,7 @@ vendor (693 MB)             [===================================================
 vendor_boot (67 MB)         [===================================================================================================================] 100 %
 vendor_dlkm (28 MB)         [===================================================================================================================] 100 %
 vendor_kernel_boot (67 MB)  [===================================================================================================================] 100 %
-go run *.go payload.bin  587.89s user 2428.69s system 248% cpu 20:12.19 total
+go run . payload.bin  587.89s user 2428.69s system 248% cpu 20:12.19 total
 ```
 
 As you can see, the pure Go implementation is about 6~ times slower than the C implementation.
