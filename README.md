@@ -112,11 +112,14 @@ just check
 just fmt
 just lint
 just test
+just coverage
 just build
 
 # run the CLI against a payload
 just run /path/to/payload.bin
 ```
+
+`just coverage` excludes protobuf-generated code under `chromeos_update_engine`.
 
 Contributing and repository conventions are documented in [`AGENTS.md`](./AGENTS.md).
 
