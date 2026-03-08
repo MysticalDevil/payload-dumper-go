@@ -12,40 +12,38 @@ See how fast payload-dumper-go is: https://imgur.com/a/X6HKJT4. (MacBook Pro 16-
 - Payload checksum verification.
 - Supports zip packages that contain `payload.bin`.
 
-### Cautions
+## Requirements
 
-- Install `xz` on your system. (Why CGO + system `xz` is used is described in [Performance](#performance).)
+- Go `1.26+` (for building from source)
+- `xz` runtime/development library (`liblzma`)
 - Working on SSD is highly recommended for performance. HDD can become a bottleneck.
 
 ### Limitations
 
 - Incremental OTA (delta) payload is not supported yet. ([#44](https://github.com/ssut/payload-dumper-go/pull/44))
 
-## Installation
+## Quick Start
 
-### Linux and macOS (From releases, recommended)
+### Install from releases (recommended)
 
 1. Download the latest binary for your platform from [here](https://github.com/ssut/payload-dumper-go/releases) and extract the contents of the downloaded file to a directory on your system.
-2. Make sure the extracted binary file has executable permissions. You can use the following command to set the permissions if necessary:
+2. Make sure the extracted binary has executable permissions:
 
-```
+```sh
 chmod +x payload-dumper-go
 ```
+3. Add it to your `PATH`:
 
-3. Run the following command to add the directory path to your system's PATH environment variable:
-
-```
+```sh
 export PATH=$PATH:/path/to/payload-dumper-go
 ```
 
-Note: This command sets the PATH environment variable only for the current terminal session. To make it permanent, you need to add the command to your system's profile file (e.g. .bashrc or .zshrc for Linux/Unix systems).
+To make it persistent, add the command to your shell profile (for example `.bashrc`/`.zshrc`).
 
 ### macOS (Homebrew)
 
-Just simply run:
-
 ```sh
-$ brew install payload-dumper-go
+brew install payload-dumper-go
 ```
 
 ### Windows
@@ -60,10 +58,6 @@ $ brew install payload-dumper-go
 
 ### Build from source
 
-Requirements:
-- Go `1.26+`
-- `xz` development library (`liblzma`)
-
 ```sh
 git clone https://github.com/ssut/payload-dumper-go
 cd payload-dumper-go
@@ -72,7 +66,7 @@ go build .
 
 ## Usage
 
-Extract all partitions:
+Extract all partitions to a timestamped directory:
 
 ```sh
 payload-dumper-go /path/to/payload.bin
@@ -95,6 +89,13 @@ Set extraction concurrency:
 ```sh
 payload-dumper-go -c 8 /path/to/payload.bin
 ```
+
+### CLI Flags
+
+- `-l, --list`: print partition list only.
+- `-p, --partitions`: extract selected partitions, comma-separated.
+- `-o, --output`: output directory (default is timestamped `extracted_...`).
+- `-c, --concurrency`: extraction worker count (must be >= 1).
 
 ## Development
 
@@ -121,7 +122,7 @@ Contributing and repository conventions are documented in [`AGENTS.md`](./AGENTS
 
 ## Performance
 
-Machine: MacBook Pro 16-inch 2021 (Apple M1 Max, 64G), OS: macOS Sonoma 14.5, Go: 1.22.4.
+Machine: MacBook Pro 16-inch 2021 (Apple M1 Max, 64G), OS: macOS Sonoma 14.5, Go: 1.22.4 (historical benchmark).
 
 Tested with a 2.31GB payload.bin file from https://developers.google.com/android/ota (akita).
 

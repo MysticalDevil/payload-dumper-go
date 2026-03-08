@@ -38,6 +38,10 @@ go.work.sum
 
 *.zip
 **/payload.bin
+/payload-dumper-go
+coverage.out
+.coverprofile
+coverage/
 
 extracted_*/
 
