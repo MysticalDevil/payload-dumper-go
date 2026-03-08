@@ -10,8 +10,10 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"sort"
+	"path/filepath"
+	"slices"
 	"sync"
+
 	"github.com/valyala/gozstd"
 
 	humanize "github.com/dustin/go-humanize"
@@ -46,6 +48,9 @@ type Payload struct {
 	requests chan *request
 	workerWG sync.WaitGroup
 	progress *mpb.Progress
+
+	errMu sync.Mutex
+	errs  []error
 }
 
 const (
@@ -116,8 +121,13 @@ func NewPayload(filename string) *Payload {
 }
 
 // SetConcurrency sets number of workers
-func (p *Payload) SetConcurrency(concurrency int) {
+func (p *Payload) SetConcurrency(concurrency int) error {
+	if concurrency < 1 {
+		return fmt.Errorf("invalid concurrency %d: must be >= 1", concurrency)
+	}
+
 	p.concurrency = concurrency
+	return nil
 }
 
 // GetConcurrency returns number of workers
@@ -138,7 +148,7 @@ func (p *Payload) Open() error {
 
 func (p *Payload) readManifest() (*chromeos_update_engine.DeltaArchiveManifest, error) {
 	buf := make([]byte, p.header.ManifestLen)
-	if _, err := p.file.Read(buf); err != nil {
+	if _, err := io.ReadFull(p.file, buf); err != nil {
 		return nil, err
 	}
 	deltaArchiveManifest := &chromeos_update_engine.DeltaArchiveManifest{}
@@ -155,7 +165,7 @@ func (p *Payload) readMetadataSignature() (*chromeos_update_engine.Signatures, e
 	}
 
 	buf := make([]byte, p.header.MetadataSignatureLen)
-	if _, err := p.file.Read(buf); err != nil {
+	if _, err := io.ReadFull(p.file, buf); err != nil {
 		return nil, err
 	}
 	signatures := &chromeos_update_engine.Signatures{}
@@ -221,6 +231,34 @@ func (p *Payload) readDataBlob(offset int64, length int64) ([]byte, error) {
 	return buf, nil
 }
 
+func sumExtentBytes(extents []*chromeos_update_engine.Extent) int64 {
+	var total int64
+	for _, extent := range extents {
+		total += int64(extent.GetNumBlocks() * blockSize)
+	}
+
+	return total
+}
+
+func copyToExtents(out *os.File, extents []*chromeos_update_engine.Extent, r io.Reader) (int64, error) {
+	var totalWritten int64
+	for _, extent := range extents {
+		offset := int64(extent.GetStartBlock() * blockSize)
+		length := int64(extent.GetNumBlocks() * blockSize)
+		if _, err := out.Seek(offset, 0); err != nil {
+			return totalWritten, err
+		}
+
+		n, err := io.CopyN(out, r, length)
+		totalWritten += n
+		if err != nil {
+			return totalWritten, err
+		}
+	}
+
+	return totalWritten, nil
+}
+
 func (p *Payload) Extract(partition *chromeos_update_engine.PartitionUpdate, out *os.File) error {
 	name := partition.GetPartitionName()
 	info := partition.GetNewPartitionInfo()
@@ -242,22 +280,16 @@ func (p *Payload) Extract(partition *chromeos_update_engine.PartitionUpdate, out
 			return fmt.Errorf("Invalid operation.DstExtents for the partition %s", name)
 		}
 		bar.Increment()
-
-		e := operation.DstExtents[0]
 		dataOffset := p.dataOffset + int64(operation.GetDataOffset())
 		dataLength := int64(operation.GetDataLength())
-		_, err := out.Seek(int64(e.GetStartBlock())*blockSize, 0)
-		if err != nil {
-			return err
-		}
-		expectedUncompressedBlockSize := int64(e.GetNumBlocks() * blockSize)
+		expectedUncompressedBlockSize := sumExtentBytes(operation.DstExtents)
 
 		bufSha := sha256.New()
 		teeReader := io.TeeReader(io.NewSectionReader(p.file, dataOffset, dataLength), bufSha)
 
 		switch operation.GetType() {
 		case chromeos_update_engine.InstallOperation_REPLACE:
-			n, err := io.Copy(out, teeReader)
+			n, err := copyToExtents(out, operation.DstExtents, teeReader)
 			if err != nil {
 				return err
 			}
@@ -269,7 +301,7 @@ func (p *Payload) Extract(partition *chromeos_update_engine.PartitionUpdate, out
 
 		case chromeos_update_engine.InstallOperation_REPLACE_XZ:
 			reader := xz.NewDecompressionReader(teeReader)
-			n, err := io.Copy(out, &reader)
+			n, err := copyToExtents(out, operation.DstExtents, &reader)
 			if err != nil {
 				return err
 			}
@@ -282,7 +314,7 @@ func (p *Payload) Extract(partition *chromeos_update_engine.PartitionUpdate, out
 
 		case chromeos_update_engine.InstallOperation_REPLACE_BZ:
 			reader := bzip2.NewReader(teeReader)
-			n, err := io.Copy(out, reader)
+			n, err := copyToExtents(out, operation.DstExtents, reader)
 			if err != nil {
 				return err
 			}
@@ -293,7 +325,7 @@ func (p *Payload) Extract(partition *chromeos_update_engine.PartitionUpdate, out
 
 		case chromeos_update_engine.InstallOperation_ZSTD:
 			reader := gozstd.NewReader(teeReader)
-			n, err := io.Copy(out, reader)
+			n, err := copyToExtents(out, operation.DstExtents, reader)
 			if err != nil {
 				return err
 			}
@@ -304,7 +336,7 @@ func (p *Payload) Extract(partition *chromeos_update_engine.PartitionUpdate, out
 
 		case chromeos_update_engine.InstallOperation_ZERO:
 			reader := bytes.NewReader(make([]byte, expectedUncompressedBlockSize))
-			n, err := io.Copy(out, reader)
+			n, err := copyToExtents(out, operation.DstExtents, reader)
 			if err != nil {
 				return err
 			}
@@ -331,20 +363,36 @@ func (p *Payload) Extract(partition *chromeos_update_engine.PartitionUpdate, out
 
 func (p *Payload) worker() {
 	for req := range p.requests {
-		partition := req.partition
-		targetDirectory := req.targetDirectory
+		func(req *request) {
+			defer p.workerWG.Done()
 
-		name := fmt.Sprintf("%s.img", partition.GetPartitionName())
-		filepath := fmt.Sprintf("%s/%s", targetDirectory, name)
-		file, err := os.OpenFile(filepath, os.O_TRUNC|os.O_CREATE|os.O_WRONLY, 0o755)
-		if err != nil {
-		}
-		if err := p.Extract(partition, file); err != nil {
-			fmt.Println(err.Error())
-		}
+			partition := req.partition
+			targetDirectory := req.targetDirectory
 
-		p.workerWG.Done()
+			name := fmt.Sprintf("%s.img", partition.GetPartitionName())
+			outputPath := filepath.Join(targetDirectory, name)
+			file, err := os.OpenFile(outputPath, os.O_TRUNC|os.O_CREATE|os.O_WRONLY, 0o644)
+			if err != nil {
+				p.recordError(fmt.Errorf("failed to open output %s: %w", outputPath, err))
+				return
+			}
+			defer file.Close()
+
+			if err := p.Extract(partition, file); err != nil {
+				p.recordError(fmt.Errorf("failed to extract partition %s: %w", partition.GetPartitionName(), err))
+			}
+		}(req)
 	}
+}
+
+func (p *Payload) recordError(err error) {
+	if err == nil {
+		return
+	}
+
+	p.errMu.Lock()
+	p.errs = append(p.errs, err)
+	p.errMu.Unlock()
 }
 
 func (p *Payload) spawnExtractWorkers(n int) {
@@ -358,16 +406,16 @@ func (p *Payload) ExtractSelected(targetDirectory string, partitions []string) e
 		return errors.New("Payload has not been initialized")
 	}
 	p.progress = mpb.New()
+	p.errs = nil
 
 	p.requests = make(chan *request, 100)
 	p.spawnExtractWorkers(p.concurrency)
 
-	sort.Strings(partitions)
+	slices.Sort(partitions)
 
 	for _, partition := range p.deltaArchiveManifest.Partitions {
 		if len(partitions) > 0 {
-			idx := sort.SearchStrings(partitions, *partition.PartitionName)
-			if idx == len(partitions) || partitions[idx] != *partition.PartitionName {
+			if _, ok := slices.BinarySearch(partitions, partition.GetPartitionName()); !ok {
 				continue
 			}
 		}
@@ -379,8 +427,13 @@ func (p *Payload) ExtractSelected(targetDirectory string, partitions []string) e
 		}
 	}
 
-	p.workerWG.Wait()
 	close(p.requests)
+	p.workerWG.Wait()
+	p.progress.Wait()
+
+	if len(p.errs) > 0 {
+		return errors.Join(p.errs...)
+	}
 
 	return nil
 }

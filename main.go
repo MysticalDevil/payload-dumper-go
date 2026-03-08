@@ -7,7 +7,7 @@ import (
 	"io"
 	"log"
 	"os"
-	"runtime"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -25,10 +25,11 @@ func extractPayloadBin(filename string) string {
 			if err != nil {
 				log.Fatalf("Failed to read zipped file: %s\n", file.Name)
 			}
+			defer zippedFile.Close()
 
 			tempfile, err := os.CreateTemp(os.TempDir(), "payload_*.bin")
 			if err != nil {
-				log.Fatalf("Failed to create a temp file located at %s\n", tempfile.Name())
+				log.Fatalf("Failed to create a temp file in %s: %v\n", os.TempDir(), err)
 			}
 			defer tempfile.Close()
 
@@ -45,8 +46,6 @@ func extractPayloadBin(filename string) string {
 }
 
 func main() {
-	runtime.GOMAXPROCS(runtime.NumCPU())
-
 	var (
 		list            bool
 		partitions      string
@@ -89,7 +88,9 @@ func main() {
 	if err := payload.Open(); err != nil {
 		log.Fatal(err)
 	}
-	payload.Init()
+	if err := payload.Init(); err != nil {
+		log.Fatal(err)
+	}
 
 	if list {
 		return
@@ -101,21 +102,22 @@ func main() {
 	if targetDirectory == "" {
 		targetDirectory = fmt.Sprintf("extracted_%d%02d%02d_%02d%02d%02d", now.Year(), now.Month(), now.Day(), now.Hour(), now.Minute(), now.Second())
 	}
-	if _, err := os.Stat(targetDirectory); os.IsNotExist(err) {
-		if err := os.Mkdir(targetDirectory, 0o755); err != nil {
-			log.Fatal("Failed to create target directory")
-		}
+	if err := os.MkdirAll(targetDirectory, 0o755); err != nil {
+		log.Fatalf("Failed to create target directory %s: %v", targetDirectory, err)
 	}
 
-	payload.SetConcurrency(concurrency)
+	if err := payload.SetConcurrency(concurrency); err != nil {
+		log.Fatal(err)
+	}
 	fmt.Printf("Number of workers: %d\n", payload.GetConcurrency())
 
 	if partitions != "" {
-		if err := payload.ExtractSelected(targetDirectory, strings.Split(partitions, ",")); err != nil {
+		selected := strings.Split(partitions, ",")
+		if err := payload.ExtractSelected(filepath.Clean(targetDirectory), selected); err != nil {
 			log.Fatal(err)
 		}
 	} else {
-		if err := payload.ExtractAll(targetDirectory); err != nil {
+		if err := payload.ExtractAll(filepath.Clean(targetDirectory)); err != nil {
 			log.Fatal(err)
 		}
 	}
