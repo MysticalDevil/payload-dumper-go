@@ -139,6 +139,7 @@ Tested with a 2.31GB payload.bin file from https://developers.google.com/android
 
 ```shell
 $ payload-dumper-go payload.bin
+[INFO] input: payload.bin
 [INFO] payload version: 2
 [INFO] manifest length: 154250
 [INFO] signature length: 523
@@ -172,33 +173,34 @@ vendor_dlkm (28 MB)
 vendor_kernel_boot (67 MB)
 [INFO] output dir: extracted_20260421_123045
 [INFO] workers: 4
-ACTIVE 0  FAIL 0  DONE 24/24  PEND 0  TOTAL  100 % (3417/3417)
-DONE  abl                          [================] 100 % (12/12)
-DONE  bl1                          [================] 100 % (3/3)
-DONE  bl2                          [================] 100 % (5/5)
-DONE  bl31                         [================] 100 % (4/4)
-DONE  boot                         [================] 100 % (128/128)
-DONE  dtbo                         [================] 100 % (25/25)
-DONE  gcf                          [================] 100 % (2/2)
-DONE  gsa                          [================] 100 % (27/27)
-DONE  gsa_bl1                      [================] 100 % (4/4)
-DONE  init_boot                    [================] 100 % (34/34)
-DONE  ldfw                         [================] 100 % (12/12)
-DONE  modem                        [================] 100 % (529/529)
-DONE  pbl                          [================] 100 % (5/5)
-DONE  product                      [================] 100 % (2089/2089)
-DONE  pvmfw                        [================] 100 % (8/8)
-DONE  system                       [================] 100 % (1056/1056)
-DONE  system_dlkm                  [================] 100 % (14/14)
-DONE  system_ext                   [================] 100 % (380/380)
-DONE  tzsw                         [================] 100 % (20/20)
-DONE  vbmeta                       [================] 100 % (3/3)
-DONE  vbmeta_system                [================] 100 % (2/2)
-DONE  vbmeta_vendor                [================] 100 % (1/1)
-DONE  vendor                       [================] 100 % (799/799)
-DONE  vendor_boot                  [================] 100 % (128/128)
-DONE  vendor_dlkm                  [================] 100 % (55/55)
-DONE  vendor_kernel_boot           [================] 100 % (128/128)
+[INFO] extracting all partitions
+  ACTIVE 0  FAIL 0  DONE 24/24  PEND 0  TOTAL 100 % (3417/3417)
+DONE                abl   [==============================] 100 % (12/12)
+DONE                bl1   [==============================] 100 % (3/3)
+DONE                bl2   [==============================] 100 % (5/5)
+DONE               bl31   [==============================] 100 % (4/4)
+DONE               boot   [==============================] 100 % (128/128)
+DONE               dtbo   [==============================] 100 % (25/25)
+DONE                gcf   [==============================] 100 % (2/2)
+DONE                gsa   [==============================] 100 % (27/27)
+DONE            gsa_bl1   [==============================] 100 % (4/4)
+DONE          init_boot   [==============================] 100 % (34/34)
+DONE               ldfw   [==============================] 100 % (12/12)
+DONE              modem   [==============================] 100 % (529/529)
+DONE                pbl   [==============================] 100 % (5/5)
+DONE            product   [==============================] 100 % (2089/2089)
+DONE              pvmfw   [==============================] 100 % (8/8)
+DONE             system   [==============================] 100 % (1056/1056)
+DONE        system_dlkm   [==============================] 100 % (14/14)
+DONE         system_ext   [==============================] 100 % (380/380)
+DONE               tzsw   [==============================] 100 % (20/20)
+DONE             vbmeta   [==============================] 100 % (3/3)
+DONE      vbmeta_system   [==============================] 100 % (2/2)
+DONE      vbmeta_vendor   [==============================] 100 % (1/1)
+DONE             vendor   [==============================] 100 % (799/799)
+DONE         vendor_boot   [==============================] 100 % (128/128)
+DONE         vendor_dlkm   [==============================] 100 % (55/55)
+DONE  vendor_kernel_boot   [==============================] 100 % (128/128)
 payload-dumper-go payload.bin  87.93s user 3.51s system 145% cpu 1:02.99 total
 ```
 
@@ -208,6 +210,7 @@ payload-dumper-go payload.bin  87.93s user 3.51s system 145% cpu 1:02.99 total
 
 ```shell
 $ payload-dumper-go payload.bin
+[INFO] input: payload.bin
 [INFO] payload version: 2
 [INFO] manifest length: 154250
 [INFO] signature length: 523
@@ -241,9 +244,9 @@ vendor_dlkm (28 MB)
 vendor_kernel_boot (67 MB)
 [INFO] output dir: extracted_20260421_123045
 [INFO] workers: 4
-ACTIVE 0  FAIL 0  DONE 24/24  PEND 0  TOTAL  100 % (3417/3417)
-DONE  abl                          [================] 100 % (12/12)
-DONE  bl1                          [================] 100 % (3/3)
+[INFO] extracting all partitions
+  ACTIVE 0  FAIL 0  DONE 24/24  PEND 0  TOTAL 100 % (3417/3417)
+DONE                abl   [==============================] 100 % (12/12)
 ... (truncated for brevity) ...
 payload-dumper-go payload.bin  587.89s user 2428.69s system 248% cpu 20:12.19 total
 ```

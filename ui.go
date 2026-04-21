@@ -145,11 +145,19 @@ func summaryDecorator(p *Payload) decor.Decorator {
 			pending = 0
 		}
 
-		return fmt.Sprintf("ACTIVE %s  FAIL %s  DONE %s  PEND %s  TOTAL",
+		pct := 0
+		if s.Total > 0 {
+			pct = int(float64(s.Current) / float64(s.Total) * 100)
+		}
+
+		return fmt.Sprintf("ACTIVE %s  FAIL %s  DONE %s  PEND %s  TOTAL %s (%d/%d)",
 			green(fmt.Sprintf("%d", active)),
 			red(fmt.Sprintf("%d", fail)),
 			green(fmt.Sprintf("%d/%d", done, total)),
 			yellow(fmt.Sprintf("%d", pending)),
+			green(fmt.Sprintf("%d %%", pct)),
+			s.Current,
+			s.Total,
 		)
 	})
 }

@@ -18,7 +18,6 @@ import (
 
 	xz "github.com/spencercw/go-xz"
 	"github.com/vbauerster/mpb/v8"
-	"github.com/vbauerster/mpb/v8/decor"
 
 	"google.golang.org/protobuf/proto"
 
@@ -449,12 +448,8 @@ func (p *Payload) ExtractSelected(targetDirectory string, partitions []string) e
 	}
 	p.summaryBar = p.progress.New(actualTotalOps,
 		emptyBarStyle(),
-		mpb.PrependDecorators(
-			summaryDecorator(p),
-		),
 		mpb.AppendDecorators(
-			decor.Percentage(),
-			decor.CountersNoUnit(" (%d/%d)"),
+			summaryDecorator(p),
 		),
 		mpb.BarPriority(100),
 	)
