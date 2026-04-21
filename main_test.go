@@ -66,7 +66,7 @@ func TestRunListModeWithZipInput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("run list with zip failed: %v", err)
 	}
-	if !strings.Contains(stdout.String(), "Please wait while extracting payload.bin from the archive.") {
+	if !strings.Contains(stdout.String(), "zip input detected, extracting payload.bin first") {
 		t.Fatalf("expected zip extraction message, got %q", stdout.String())
 	}
 }
