@@ -16,10 +16,10 @@ import (
 
 	"github.com/valyala/gozstd"
 
-	humanize "github.com/dustin/go-humanize"
 	xz "github.com/spencercw/go-xz"
-	"github.com/vbauerster/mpb/v5"
-	"github.com/vbauerster/mpb/v5/decor"
+	"github.com/vbauerster/mpb/v8"
+	"github.com/vbauerster/mpb/v8/decor"
+
 	"google.golang.org/protobuf/proto"
 
 	"github.com/ssut/payload-dumper-go/chromeos_update_engine"
@@ -48,6 +48,14 @@ type Payload struct {
 	requests chan *request
 	workerWG sync.WaitGroup
 	progress *mpb.Progress
+
+	totalOps    int64
+	summaryBar  *mpb.Bar
+	stateMu     sync.Mutex
+	partitionStates map[string]string
+	activeCount int
+	doneCount   int
+	failCount   int
 
 	errMu sync.Mutex
 	errs  []error
@@ -83,7 +91,7 @@ func (ph *payloadHeader) ReadFromPayload() error {
 		return err
 	}
 	ph.Version = binary.BigEndian.Uint64(buf)
-	fmt.Printf("Payload Version: %d\n", ph.Version)
+	printInfo("payload version: %d", ph.Version)
 
 	if ph.Version != brilloMajorPayloadVersion {
 		return fmt.Errorf("Unsupported payload version: %d", ph.Version)
@@ -95,7 +103,7 @@ func (ph *payloadHeader) ReadFromPayload() error {
 		return err
 	}
 	ph.ManifestLen = binary.BigEndian.Uint64(buf)
-	fmt.Printf("Payload Manifest Length: %d\n", ph.ManifestLen)
+	printInfo("manifest length: %d", ph.ManifestLen)
 
 	ph.Size = 24
 
@@ -105,7 +113,7 @@ func (ph *payloadHeader) ReadFromPayload() error {
 		return err
 	}
 	ph.MetadataSignatureLen = binary.BigEndian.Uint32(buf)
-	fmt.Printf("Payload Manifest Signature Length: %d\n", ph.MetadataSignatureLen)
+	printInfo("signature length: %d", ph.MetadataSignatureLen)
 
 	return nil
 }
@@ -203,15 +211,17 @@ func (p *Payload) Init() error {
 	p.metadataSize = int64(p.header.Size + p.header.ManifestLen)
 	p.dataOffset = p.metadataSize + int64(p.header.MetadataSignatureLen)
 
-	fmt.Println("Found partitions:")
-	for i, partition := range p.deltaArchiveManifest.Partitions {
-		fmt.Printf("%s (%s)", partition.GetPartitionName(), humanize.Bytes(*partition.GetNewPartitionInfo().Size))
+	printInfo("manifest parsed, partitions: %d", len(p.deltaArchiveManifest.Partitions))
+	fmt.Fprintln(uiOut, "Found partitions:")
+	for _, partition := range p.deltaArchiveManifest.Partitions {
+		fmt.Fprintln(uiOut, renderPartition(partition.GetPartitionName(), *partition.GetNewPartitionInfo().Size))
+	}
 
-		if i < len(deltaArchiveManifest.Partitions)-1 {
-			fmt.Printf(", ")
-		} else {
-			fmt.Printf("\n")
-		}
+	p.totalOps = 0
+	p.partitionStates = make(map[string]string)
+	for _, partition := range p.deltaArchiveManifest.Partitions {
+		p.totalOps += int64(len(partition.Operations))
+		p.partitionStates[partition.GetPartitionName()] = "PEND"
 	}
 	p.initialized = true
 
@@ -259,20 +269,10 @@ func copyToExtents(out *os.File, extents []*chromeos_update_engine.Extent, r io.
 	return totalWritten, nil
 }
 
-func (p *Payload) Extract(partition *chromeos_update_engine.PartitionUpdate, out *os.File) error {
+func (p *Payload) Extract(partition *chromeos_update_engine.PartitionUpdate, out *os.File, state *string) error {
 	name := partition.GetPartitionName()
-	info := partition.GetNewPartitionInfo()
 	totalOperations := len(partition.Operations)
-	barName := fmt.Sprintf("%s (%s)", name, humanize.Bytes(info.GetSize()))
-	bar := p.progress.AddBar(
-		int64(totalOperations),
-		mpb.PrependDecorators(
-			decor.Name(barName, decor.WCSyncSpaceR),
-		),
-		mpb.AppendDecorators(
-			decor.Percentage(),
-		),
-	)
+	bar := p.progress.New(int64(totalOperations), makeBarStyle(), makeBarOptions(name, int64(totalOperations), state)...)
 	defer bar.SetTotal(0, true)
 
 	for _, operation := range partition.Operations {
@@ -280,6 +280,9 @@ func (p *Payload) Extract(partition *chromeos_update_engine.PartitionUpdate, out
 			return fmt.Errorf("Invalid operation.DstExtents for the partition %s", name)
 		}
 		bar.Increment()
+		if p.summaryBar != nil {
+			p.summaryBar.Increment()
+		}
 		dataOffset := p.dataOffset + int64(operation.GetDataOffset())
 		dataLength := int64(operation.GetDataLength())
 		expectedUncompressedBlockSize := sumExtentBytes(operation.DstExtents)
@@ -367,19 +370,41 @@ func (p *Payload) worker() {
 			defer p.workerWG.Done()
 
 			partition := req.partition
-			targetDirectory := req.targetDirectory
+			name := partition.GetPartitionName()
+			state := ""
 
-			name := fmt.Sprintf("%s.img", partition.GetPartitionName())
-			outputPath := filepath.Join(targetDirectory, name)
+			targetDirectory := req.targetDirectory
+			outputPath := filepath.Join(targetDirectory, fmt.Sprintf("%s.img", name))
 			file, err := os.OpenFile(outputPath, os.O_TRUNC|os.O_CREATE|os.O_WRONLY, 0o644)
 			if err != nil {
+				p.stateMu.Lock()
+				p.partitionStates[name] = "FAIL"
+				p.failCount++
+				p.stateMu.Unlock()
 				p.recordError(fmt.Errorf("failed to open output %s: %w", outputPath, err))
 				return
 			}
 			defer file.Close()
 
-			if err := p.Extract(partition, file); err != nil {
-				p.recordError(fmt.Errorf("failed to extract partition %s: %w", partition.GetPartitionName(), err))
+			p.stateMu.Lock()
+			p.activeCount++
+			p.stateMu.Unlock()
+
+			if err := p.Extract(partition, file, &state); err != nil {
+				state = "FAIL"
+				p.stateMu.Lock()
+				p.failCount++
+				p.activeCount--
+				p.partitionStates[name] = "FAIL"
+				p.stateMu.Unlock()
+				p.recordError(fmt.Errorf("failed to extract partition %s: %w", name, err))
+			} else {
+				state = "DONE"
+				p.stateMu.Lock()
+				p.doneCount++
+				p.activeCount--
+				p.partitionStates[name] = "DONE"
+				p.stateMu.Unlock()
 			}
 		}(req)
 	}
@@ -405,8 +430,34 @@ func (p *Payload) ExtractSelected(targetDirectory string, partitions []string) e
 	if !p.initialized {
 		return errors.New("Payload has not been initialized")
 	}
-	p.progress = mpb.New()
+	p.progress = mpb.New(mpb.WithAutoRefresh(), mpb.WithOutput(uiOut))
 	p.errs = nil
+	if p.partitionStates == nil {
+		p.partitionStates = make(map[string]string)
+	}
+
+
+	// Summary bar on top
+	actualTotalOps := int64(0)
+	for _, partition := range p.deltaArchiveManifest.Partitions {
+		if len(partitions) > 0 {
+			if _, ok := slices.BinarySearch(partitions, partition.GetPartitionName()); !ok {
+				continue
+			}
+		}
+		actualTotalOps += int64(len(partition.Operations))
+	}
+	p.summaryBar = p.progress.New(actualTotalOps,
+		emptyBarStyle(),
+		mpb.PrependDecorators(
+			summaryDecorator(p),
+		),
+		mpb.AppendDecorators(
+			decor.Percentage(),
+			decor.CountersNoUnit(" (%d/%d)"),
+		),
+		mpb.BarPriority(100),
+	)
 
 	p.requests = make(chan *request, 100)
 	p.spawnExtractWorkers(p.concurrency)
@@ -429,6 +480,7 @@ func (p *Payload) ExtractSelected(targetDirectory string, partitions []string) e
 
 	close(p.requests)
 	p.workerWG.Wait()
+	p.summaryBar.SetTotal(0, true)
 	p.progress.Wait()
 
 	if len(p.errs) > 0 {

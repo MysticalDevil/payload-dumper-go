@@ -58,11 +58,13 @@ func main() {
 }
 
 func run(args []string, stdout io.Writer, stderr io.Writer) error {
+	setUIOutput(stdout, stderr)
 	var (
 		list            bool
 		partitions      string
 		outputDirectory string
 		concurrency     int
+		dryRun          bool
 	)
 
 	fs := flag.NewFlagSet("payload-dumper-go", flag.ContinueOnError)
@@ -75,6 +77,7 @@ func run(args []string, stdout io.Writer, stderr io.Writer) error {
 	fs.StringVar(&outputDirectory, "output", "", "Set output directory")
 	fs.StringVar(&partitions, "p", "", "Dump only selected partitions (comma-separated) (shorthand)")
 	fs.StringVar(&partitions, "partitions", "", "Dump only selected partitions (comma-separated)")
+	fs.BoolVar(&dryRun, "dry-run", false, "Simulate extraction without writing files")
 	if err := fs.Parse(args); err != nil {
 		printUsage(stderr, fs)
 		return fmt.Errorf("%w: %v", errUsage, err)
@@ -90,9 +93,23 @@ func run(args []string, stdout io.Writer, stderr io.Writer) error {
 		return fmt.Errorf("file does not exist: %s", filename)
 	}
 
+	now := time.Now()
+	targetDirectory := outputDirectory
+	if targetDirectory == "" {
+		targetDirectory = fmt.Sprintf("extracted_%d%02d%02d_%02d%02d%02d", now.Year(), now.Month(), now.Day(), now.Hour(), now.Minute(), now.Second())
+	}
+
+	if dryRun {
+		selected := []string{}
+		if partitions != "" {
+			selected = strings.Split(partitions, ",")
+		}
+		return DryRun(filepath.Clean(targetDirectory), selected, 20*time.Millisecond)
+	}
+
 	payloadBin := filename
 	if strings.HasSuffix(filename, ".zip") {
-		fmt.Fprintln(stdout, "Please wait while extracting payload.bin from the archive.")
+		printWarn("zip input detected, extracting payload.bin first")
 		extracted, err := extractPayloadBin(filename)
 		if err != nil {
 			return err
@@ -104,7 +121,7 @@ func run(args []string, stdout io.Writer, stderr io.Writer) error {
 			defer os.Remove(payloadBin)
 		}
 	}
-	fmt.Fprintf(stdout, "payload.bin: %s\n", payloadBin)
+	printInfo("input: %s", payloadBin)
 
 	payload := NewPayload(payloadBin)
 	if err := payload.Open(); err != nil {
@@ -118,12 +135,6 @@ func run(args []string, stdout io.Writer, stderr io.Writer) error {
 		return nil
 	}
 
-	now := time.Now()
-
-	targetDirectory := outputDirectory
-	if targetDirectory == "" {
-		targetDirectory = fmt.Sprintf("extracted_%d%02d%02d_%02d%02d%02d", now.Year(), now.Month(), now.Day(), now.Hour(), now.Minute(), now.Second())
-	}
 	if err := os.MkdirAll(targetDirectory, 0o755); err != nil {
 		return fmt.Errorf("failed to create target directory %s: %w", targetDirectory, err)
 	}
@@ -131,14 +142,18 @@ func run(args []string, stdout io.Writer, stderr io.Writer) error {
 	if err := payload.SetConcurrency(concurrency); err != nil {
 		return err
 	}
-	fmt.Fprintf(stdout, "Number of workers: %d\n", payload.GetConcurrency())
+
+	printInfo("output dir: %s", targetDirectory)
+	printInfo("workers: %d", payload.GetConcurrency())
 
 	if partitions != "" {
 		selected := strings.Split(partitions, ",")
+		printInfo("extracting selected partitions: %s", partitions)
 		if err := payload.ExtractSelected(filepath.Clean(targetDirectory), selected); err != nil {
 			return err
 		}
 	} else {
+		printInfo("extracting all partitions")
 		if err := payload.ExtractAll(filepath.Clean(targetDirectory)); err != nil {
 			return err
 		}
