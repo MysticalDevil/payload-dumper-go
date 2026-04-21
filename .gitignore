@@ -46,3 +46,4 @@ coverage/
 extracted_*/
 
 .DS_Store
+payload-dumper
