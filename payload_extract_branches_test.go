@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/valyala/gozstd"
-	"github.com/vbauerster/mpb/v5"
+	"github.com/vbauerster/mpb/v8"
 
 	"github.com/ssut/payload-dumper-go/chromeos_update_engine"
 )
@@ -21,7 +21,7 @@ func TestExtractZeroOperation(t *testing.T) {
 	defer out.Close()
 
 	part := extractPartitionWithOperation(chromeos_update_engine.InstallOperation_ZERO, nil, nil, oneBlockExtent())
-	if err := p.Extract(part, out); err != nil {
+	if err := p.Extract(part, out, nil); err != nil {
 		t.Fatalf("extract ZERO operation: %v", err)
 	}
 
@@ -56,7 +56,7 @@ func TestExtractZstdOperation(t *testing.T) {
 		hash[:],
 		oneBlockExtent(),
 	)
-	if err := p.Extract(part, out); err != nil {
+	if err := p.Extract(part, out, nil); err != nil {
 		t.Fatalf("extract ZSTD operation: %v", err)
 	}
 
@@ -76,7 +76,7 @@ func TestExtractInvalidDstExtents(t *testing.T) {
 	defer out.Close()
 
 	part := extractPartitionWithOperation(chromeos_update_engine.InstallOperation_REPLACE, bytesOf('R', blockSize), nil, nil)
-	err := p.Extract(part, out)
+	err := p.Extract(part, out, nil)
 	if err == nil || !strings.Contains(err.Error(), "Invalid operation.DstExtents") {
 		t.Fatalf("expected invalid extents error, got %v", err)
 	}
@@ -89,7 +89,7 @@ func TestExtractUnhandledOperationType(t *testing.T) {
 	defer out.Close()
 
 	part := extractPartitionWithOperation(chromeos_update_engine.InstallOperation_MOVE, nil, nil, oneBlockExtent())
-	err := p.Extract(part, out)
+	err := p.Extract(part, out, nil)
 	if err == nil || !strings.Contains(err.Error(), "Unhandled operation type") {
 		t.Fatalf("expected unhandled type error, got %v", err)
 	}

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vbauerster/mpb/v5"
+	"github.com/vbauerster/mpb/v8"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/ssut/payload-dumper-go/chromeos_update_engine"
@@ -32,7 +32,7 @@ func TestExtractReplaceXzInvalidData(t *testing.T) {
 		hash[:],
 		oneBlockExtent(),
 	)
-	err := p.Extract(part, out)
+	err := p.Extract(part, out, nil)
 	if err == nil {
 		t.Fatal("expected REPLACE_XZ error for invalid compressed data")
 	}
@@ -54,7 +54,7 @@ func TestExtractReplaceBzInvalidData(t *testing.T) {
 		hash[:],
 		oneBlockExtent(),
 	)
-	err := p.Extract(part, out)
+	err := p.Extract(part, out, nil)
 	if err == nil {
 		t.Fatal("expected REPLACE_BZ error for invalid compressed data")
 	}
@@ -132,7 +132,7 @@ func BenchmarkExtractReplaceSingleBlock(b *testing.B) {
 		if _, err := out.Seek(0, 0); err != nil {
 			b.Fatalf("seek output: %v", err)
 		}
-		if err := p.Extract(part, out); err != nil {
+		if err := p.Extract(part, out, nil); err != nil {
 			b.Fatalf("extract replace failed: %v", err)
 		}
 	}
@@ -155,7 +155,7 @@ func BenchmarkExtractZeroSingleBlock(b *testing.B) {
 		if _, err := out.Seek(0, 0); err != nil {
 			b.Fatalf("seek output: %v", err)
 		}
-		if err := p.Extract(part, out); err != nil {
+		if err := p.Extract(part, out, nil); err != nil {
 			b.Fatalf("extract zero failed: %v", err)
 		}
 	}
