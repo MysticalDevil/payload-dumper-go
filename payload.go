@@ -299,6 +299,7 @@ func (p *Payload) Extract(partition *chromeos_update_engine.PartitionUpdate, out
 			if int64(n) != expectedUncompressedBlockSize {
 				return fmt.Errorf("Verify failed (Unexpected bytes written): %s (%d != %d)", name, n, expectedUncompressedBlockSize)
 			}
+			io.Copy(io.Discard, teeReader)
 			break
 
 		case chromeos_update_engine.InstallOperation_REPLACE_XZ:
@@ -311,7 +312,7 @@ func (p *Payload) Extract(partition *chromeos_update_engine.PartitionUpdate, out
 			if n != expectedUncompressedBlockSize {
 				return fmt.Errorf("Verify failed (Unexpected bytes written): %s (%d != %d)", name, n, expectedUncompressedBlockSize)
 			}
-
+			io.Copy(io.Discard, teeReader)
 			break
 
 		case chromeos_update_engine.InstallOperation_REPLACE_BZ:
@@ -323,6 +324,7 @@ func (p *Payload) Extract(partition *chromeos_update_engine.PartitionUpdate, out
 			if n != expectedUncompressedBlockSize {
 				return fmt.Errorf("Verify failed (Unexpected bytes written): %s (%d != %d)", name, n, expectedUncompressedBlockSize)
 			}
+			io.Copy(io.Discard, teeReader)
 			break
 
 		case chromeos_update_engine.InstallOperation_ZSTD:
@@ -334,6 +336,7 @@ func (p *Payload) Extract(partition *chromeos_update_engine.PartitionUpdate, out
 			if n != expectedUncompressedBlockSize {
 				return fmt.Errorf("Verify failed (Unexpected bytes written): %s (%d != %d)", name, n, expectedUncompressedBlockSize)
 			}
+			io.Copy(io.Discard, teeReader)
 			break
 
 		case chromeos_update_engine.InstallOperation_ZERO:
@@ -346,6 +349,7 @@ func (p *Payload) Extract(partition *chromeos_update_engine.PartitionUpdate, out
 			if n != expectedUncompressedBlockSize {
 				return fmt.Errorf("Verify failed (Unexpected bytes written): %s (%d != %d)", name, n, expectedUncompressedBlockSize)
 			}
+			io.Copy(io.Discard, teeReader)
 			break
 
 		default:
