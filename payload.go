@@ -24,6 +24,18 @@ import (
 	"github.com/ssut/payload-dumper-go/chromeos_update_engine"
 )
 
+func isValidPartitionName(name string) bool {
+	if name == "" || name == "." || name == ".." {
+		return false
+	}
+	for _, r := range name {
+		if r == '/' || r == '\\' || r == 0 {
+			return false
+		}
+	}
+	return true
+}
+
 type request struct {
 	partition       *chromeos_update_engine.PartitionUpdate
 	targetDirectory string
@@ -48,13 +60,13 @@ type Payload struct {
 	workerWG sync.WaitGroup
 	progress *mpb.Progress
 
-	totalOps    int64
-	summaryBar  *mpb.Bar
-	stateMu     sync.Mutex
+	totalOps        int64
+	summaryBar      *mpb.Bar
+	stateMu         sync.Mutex
 	partitionStates map[string]string
-	activeCount int
-	doneCount   int
-	failCount   int
+	activeCount     int
+	doneCount       int
+	failCount       int
 
 	errMu sync.Mutex
 	errs  []error
@@ -373,11 +385,17 @@ func (p *Payload) worker() {
 			defer p.workerWG.Done()
 
 			partition := req.partition
-			name := partition.GetPartitionName()
+			targetDirectory := req.targetDirectory
+			partitionName := partition.GetPartitionName()
 			state := ""
 
-			targetDirectory := req.targetDirectory
-			outputPath := filepath.Join(targetDirectory, fmt.Sprintf("%s.img", name))
+			if !isValidPartitionName(partitionName) {
+				p.recordError(fmt.Errorf("invalid partition name: %q", partitionName))
+				return
+			}
+
+			name := fmt.Sprintf("%s.img", partitionName)
+			outputPath := filepath.Join(targetDirectory, name)
 			file, err := os.OpenFile(outputPath, os.O_TRUNC|os.O_CREATE|os.O_WRONLY, 0o644)
 			if err != nil {
 				p.stateMu.Lock()
@@ -438,7 +456,6 @@ func (p *Payload) ExtractSelected(targetDirectory string, partitions []string) e
 	if p.partitionStates == nil {
 		p.partitionStates = make(map[string]string)
 	}
-
 
 	// Summary bar on top
 	actualTotalOps := int64(0)
